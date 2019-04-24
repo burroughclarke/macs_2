@@ -1,12 +1,14 @@
-globals [ max-wolf ]  ; don't let wolf population grow too large
-; wolf and wolves are both breeds of turtle.
+globals [ max-cat ]  ; don't let cat population grow too large
+; cat and cats are both breeds of turtle.
 
-breed [ wolves wolf ]
+;; name 'cat' is just chosen for its simplicity
+breed [ cats cat ]
 
 turtles-own
 [
+  minibreed ;; do not want to define seperate breeds. so just store it as a number. could also allow for 'number of breeds' var.
   energy
-  myspeed
+  speed
   flockmates
   nearest-neighbor
 ]
@@ -18,14 +20,21 @@ to setup
 
   ask patches [ set pcolor green ]
 
-  create-wolves initial-number-wolves  ; create the wolves, then initialize their variables
+  let breednum number-of-breeds
+
+  create-cats breednum  ; create the cats, then initialize their variables
   [
-    set shape "bug"
-    set color black
-    set size 2  ; easier to see'
-    set myspeed 0.1
-    set energy 10
+
+    set color one-of [ red blue yellow pink orange black white grey cyan brown ] ;; don't want green!
+    set shape one-of [ "bug" "butterfly" "cow" "default" "fish" "person" "turtle" "sheep" "wolf"]
+
+    set minibreed breednum
+    set size 2
+    set speed 0.1
+    set energy initial-energy
     setxy random-xcor random-ycor
+
+    set breednum breednum - 1
   ]
   display-labels
   reset-ticks
@@ -33,14 +42,14 @@ end
 
 to go
 
-  ask wolves [
+  ask cats [
     move
-    set energy energy - 0.1  ; wolves lose energy as they move
-    eat-wolf ; wolves eat a wolf on their patch
-    death ; wolves die if out of energy
-    reproduce-wolves ; wolves reproduce at random rate governed by slider
+    set energy energy - 0.1  ; cats lose energy as they move
+    eat-cat ; cats eat a cat on their patch
+    death ; cats die if out of energy
+    reproduce-cats ; cats reproduce at random rate governed by slider
   ]
-  ; set grass count patches with [pcolor = green]
+
   tick
   display-labels
 end
@@ -48,55 +57,61 @@ end
 to move  ; turtle procedure
   rt random 50
   lt random 50
-  fd myspeed
+  fd speed
 end
 
-to eat-grass  ; wolf procedure
-  ; wolf eat grass, turn the patch brown
+to eat-grass  ; cat procedure
+  ; cat eat grass, turn the patch brown
   if pcolor = green [
     set pcolor brown
-    set energy energy + wolf-gain-from-food  ; wolf gain energy by eating
+    set energy energy + cat-gain-from-food  ; cat gain energy by eating
   ]
 end
 
-to reproduce-wolf  ; wolf procedure
-  if random-float 100 < wolf-reproduce [  ; throw "dice" to see if you will reproduce
+to reproduce-cat  ; cat procedure
+  if random-float 100 < cat-reproduce [  ; throw "dice" to see if you will reproduce
     set energy (energy / 2)                ; divide energy between parent and offspring
     hatch 1 [ rt random-float 360 fd 1 ]   ; hatch an offspring and move it forward 1 step
   ]
 end
 
-to reproduce-wolves  ; wolf procedure
-  if random-float 100 < wolf-reproduce [  ; throw "dice" to see if you will reproduce
+to reproduce-cats  ; cat procedure
+  if random-float 100 < cat-reproduce [  ; throw "dice" to see if you will reproduce
     set energy (energy / 2)               ; divide energy between parent and offspring
     hatch 1 [ rt random-float 360 fd 1 ]  ; hatch an offspring and move it forward 1 step
   ]
 end
 
-to eat-wolf  ; wolf procedure
-  ask patches in-radius vision
-      [ set pcolor red ]
+to eat-cat  ; cat procedure
+
+  ;; ask patches in-radius vision
+  ;;    [ set pcolor red ]
 
   set flockmates other turtles in-radius vision
   set nearest-neighbor min-one-of flockmates [distance myself] ;;  'nearest-neighbor' is a BIRD not a NUMBER
 
-  ;let prey one-of wolves-here
-  ; grab a random wolf
+  ;let prey one-of cats-here
+  ; grab a random cat
 
   if nearest-neighbor != nobody  [                          ; did we get one?  if so,
     if [size] of nearest-neighbor <= [size] of self [
-      show [size] of nearest-neighbor
-      ;; size of nearest-neighbor < size of self
-      ask nearest-neighbor [ die ]
-      set energy energy + wolf-gain-from-food     ; get energy from eating
-      set size size + 1
+
+      ;; animals do not eat their own breed of animal: could this be an 'evolved' trait to produce?
+      if [minibreed] of nearest-neighbor != [minibreed] of self [
+
+        ;; show [size] of nearest-neighbor
+
+         ask nearest-neighbor [ die ]
+         set energy energy + cat-gain-from-food     ; get energy from eating
+         set size size + 1
+      ]
     ]
    ]
                                 ; kill it, and...
 
 end
 
-to death  ; turtle procedure (i.e. both wolf nd wolf procedure)
+to death  ; turtle procedure (i.e. both cat nd cat procedure)
   ; when energy dips below zero, die
   if energy < 0 [ die ]
 end
@@ -104,7 +119,7 @@ end
 to display-labels
   ask turtles [ set label "" ]
   if show-energy? [
-    ask wolves [ set label round energy ]
+    ask cats [ set label round energy ]
   ]
 end
 
@@ -149,13 +164,13 @@ ticks
 SLIDER
 185
 60
-350
+357
 93
-initial-number-wolves
-initial-number-wolves
+initial-number-cats
+initial-number-cats
 0
 250
-112.0
+37.0
 1
 1
 NIL
@@ -164,13 +179,13 @@ HORIZONTAL
 SLIDER
 183
 195
-348
+360
 228
-wolf-gain-from-food
-wolf-gain-from-food
+cat-gain-from-food
+cat-gain-from-food
 0.0
 100.0
-7.0
+5.0
 1.0
 1
 NIL
@@ -181,8 +196,8 @@ SLIDER
 231
 348
 264
-wolf-reproduce
-wolf-reproduce
+cat-reproduce
+cat-reproduce
 0.0
 20.0
 5.0
@@ -241,7 +256,7 @@ true
 true
 "" ""
 PENS
-"wolves" 1.0 0 -16449023 true "" "plot count wolves"
+"wolves" 1.0 0 -16449023 true "" "plot count cats"
 
 MONITOR
 115
@@ -249,20 +264,10 @@ MONITOR
 185
 353
 wolves
-count wolves
+count cats
 3
 1
 11
-
-TEXTBOX
-198
-176
-311
-194
-Wolf settings
-11
-0.0
-0
 
 SWITCH
 105
@@ -284,8 +289,38 @@ vision
 vision
 0
 10
-0.6
+0.7
 0.1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+180
+110
+352
+143
+initial-energy
+initial-energy
+1
+500
+500.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+20
+60
+192
+93
+number-of-breeds
+number-of-breeds
+2
+10
+5.0
+1
 1
 NIL
 HORIZONTAL
@@ -293,26 +328,12 @@ HORIZONTAL
 @#$#@#$#@
 ## WHAT IS IT?
 
-This model explores the stability of predator-prey ecosystems. Such a system is called unstable if it tends to result in extinction for one or more species involved.  In contrast, a system is stable if it tends to maintain itself over time, despite fluctuations in population sizes.
+
 
 ## HOW IT WORKS
 
-There are two main variations to this model.
-
-In the first variation, the "sheep-wolves" version, wolves and sheep wander randomly around the landscape, while the wolves look for sheep to prey on. Each step costs the wolves energy, and they must eat sheep in order to replenish their energy - when they run out of energy they die. To allow the population to continue, each wolf or sheep has a fixed probability of reproducing at each time step. In this variation, we model the grass as "infinite" so that sheep always have enough to eat, and we don't explicitly model the eating or growing of grass. As such, sheep don't either gain or lose energy by eating or moving. This variation produces interesting population dynamics, but is ultimately unstable. This variation of the model is particularly well-suited to interacting species in a rich nutrient environment, such as two strains of bacteria in a petri dish (Gause, 1934).
-
-The second variation, the "sheep-wolves-grass" version explictly models grass (green) in addition to wolves and sheep. The behavior of the wolves is identical to the first variation, however this time the sheep must eat grass in order to maintain their energy - when they run out of energy they die. Once grass is eaten it will only regrow after a fixed amount of time. This variation is more complex than the first, but it is generally stable. It is a closer match to the classic Lotka Volterra population oscillation models. The classic LV models though assume the populations can take on real values, but in small populations these models underestimate extinctions and agent-based models such as the ones here, provide more realistic results. (See Wilensky & Rand, 2015; chapter 4).
-
-The construction of this model is described in two papers by Wilensky & Reisman (1998; 2006) referenced below.
 
 ## HOW TO USE IT
-
-1. Set the model-version chooser to "sheep-wolves-grass" to include grass eating and growth in the model, or to "sheep-wolves" to only include wolves (black) and sheep (white).
-2. Adjust the slider parameters (see below), or use the default settings.
-3. Press the SETUP button.
-4. Press the GO button to begin the simulation.
-5. Look at the monitors to see the current population sizes
-6. Look at the POPULATIONS plot to watch the populations fluctuate over time
 
 Parameters:
 MODEL-VERSION: Whether we model sheep wolves and grass or just sheep and wolves
@@ -366,52 +387,6 @@ Can you modify the model so that wolves actively chase sheep?
 Note the use of breeds to model two different kinds of "turtles": wolves and sheep. Note the use of patches to model grass.
 
 Note use of the ONE-OF agentset reporter to select a random sheep to be eaten by a wolf.
-
-## RELATED MODELS
-
-Look at Rabbits Grass Weeds for another model of interacting populations with different rules.
-
-## CREDITS AND REFERENCES
-
-Wilensky, U. & Reisman, K. (1998). Connected Science: Learning Biology through Constructing and Testing Computational Theories -- an Embodied Modeling Approach. International Journal of Complex Systems, M. 234, pp. 1 - 12. (The Wolf-Sheep-Predation model is a slightly extended version of the model described in the paper.)
-
-Wilensky, U. & Reisman, K. (2006). Thinking like a Wolf, a Sheep or a Firefly: Learning Biology through Constructing and Testing Computational Theories -- an Embodied Modeling Approach. Cognition & Instruction, 24(2), pp. 171-209. http://ccl.northwestern.edu/papers/wolfsheep.pdf .
-
-Wilensky, U., & Rand, W. (2015). An introduction to agent-based modeling: Modeling natural, social and engineered complex systems with NetLogo. Cambridge, MA: MIT Press.
-
-Lotka, A. J. (1925). Elements of physical biology. New York: Dover.
-
-Volterra, V. (1926, October 16). Fluctuations in the abundance of a species considered mathematically. Nature, 118, 558–560.
-
-Gause, G. F. (1934). The struggle for existence. Baltimore: Williams & Wilkins.
-
-## HOW TO CITE
-
-If you mention this model or the NetLogo software in a publication, we ask that you include the citations below.
-
-For the model itself:
-
-* Wilensky, U. (1997).  NetLogo Wolf Sheep Predation model.  http://ccl.northwestern.edu/netlogo/models/WolfSheepPredation.  Center for Connected Learning and Computer-Based Modeling, Northwestern University, Evanston, IL.
-
-Please cite the NetLogo software as:
-
-* Wilensky, U. (1999). NetLogo. http://ccl.northwestern.edu/netlogo/. Center for Connected Learning and Computer-Based Modeling, Northwestern University, Evanston, IL.
-
-## COPYRIGHT AND LICENSE
-
-Copyright 1997 Uri Wilensky.
-
-![CC BY-NC-SA 3.0](http://ccl.northwestern.edu/images/creativecommons/byncsa.png)
-
-This work is licensed under the Creative Commons Attribution-NonCommercial-ShareAlike 3.0 License.  To view a copy of this license, visit https://creativecommons.org/licenses/by-nc-sa/3.0/ or send a letter to Creative Commons, 559 Nathan Abbott Way, Stanford, California 94305, USA.
-
-Commercial licenses are also available. To inquire about commercial licenses, please contact Uri Wilensky at uri@northwestern.edu.
-
-This model was created as part of the project: CONNECTED MATHEMATICS: MAKING SENSE OF COMPLEX PHENOMENA THROUGH BUILDING OBJECT-BASED PARALLEL MODELS (OBPML).  The project gratefully acknowledges the support of the National Science Foundation (Applications of Advanced Technologies Program) -- grant numbers RED #9552950 and REC #9632612.
-
-This model was converted to NetLogo as part of the projects: PARTICIPATORY SIMULATIONS: NETWORK-BASED DESIGN FOR SYSTEMS LEARNING IN CLASSROOMS and/or INTEGRATED SIMULATION AND MODELING ENVIRONMENT. The project gratefully acknowledges the support of the National Science Foundation (REPP & ROLE programs) -- grant numbers REC #9814682 and REC-0126227. Converted from StarLogoT to NetLogo, 2000.
-
-<!-- 1997 2000 -->
 @#$#@#$#@
 default
 true
