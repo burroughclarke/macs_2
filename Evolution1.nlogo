@@ -30,7 +30,7 @@ to setup
 
     set minibreed breednum
     set size 2
-    set speed 0.1
+    set speed initial-speed
     set energy initial-energy
     setxy random-xcor random-ycor
 
@@ -44,10 +44,13 @@ to go
 
   ask cats [
     move
-    set energy energy - 0.1  ; cats lose energy as they move
+    ; set energy energy - 0.1  ; cats lose energy as they move
     eat-cat ; cats eat a cat on their patch
     death ; cats die if out of energy
-    reproduce-cats ; cats reproduce at random rate governed by slider
+    if ticks mod breed-interval = 0 [
+        reproduce-cats ; cats reproduce at random rate governed by slider
+    ]
+
   ]
 
   tick
@@ -60,25 +63,58 @@ to move  ; turtle procedure
   fd speed
 end
 
-to eat-grass  ; cat procedure
-  ; cat eat grass, turn the patch brown
-  if pcolor = green [
-    set pcolor brown
-    set energy energy + cat-gain-from-food  ; cat gain energy by eating
-  ]
-end
+;to eat-grass  ; cat procedure
+;  ; cat eat grass, turn the patch brown
+;  if pcolor = green [
+;    set pcolor brown
+;    set energy energy + cat-gain-from-food  ; cat gain energy by eating
+;  ]
+;end
 
-to reproduce-cat  ; cat procedure
-  if random-float 100 < cat-reproduce [  ; throw "dice" to see if you will reproduce
+;; example: a creature of size 2 requires 16 energy to breed
+to reproduce-cats  ;
+  if energy > size ^ 4 [
     set energy (energy / 2)                ; divide energy between parent and offspring
-    hatch 1 [ rt random-float 360 fd 1 ]   ; hatch an offspring and move it forward 1 step
-  ]
-end
+    hatch 1 [
 
-to reproduce-cats  ; cat procedure
-  if random-float 100 < cat-reproduce [  ; throw "dice" to see if you will reproduce
-    set energy (energy / 2)               ; divide energy between parent and offspring
-    hatch 1 [ rt random-float 360 fd 1 ]  ; hatch an offspring and move it forward 1 step
+;      show "size of parent:"
+;      show size
+      ;; random-normal outputs a value from the standard distribution
+      ;; '0.1' is the standard deviation
+
+      let coinflip random 2
+      ;show coinflip
+
+      let change random-float variation
+
+      if coinflip = 0 [
+        ; set change 0 - variation
+        set size size - change
+
+        if speed > variation [
+           set speed speed + change
+        ]
+      ]
+      if coinflip = 1 [
+        ; set change variation
+        set size size + change
+
+        ; don't let it get to minus numbers
+        if speed > variation [
+           set speed speed - change
+        ]
+
+      ]
+;    show "size:"
+;    show size
+;    show "speed:"
+;    show speed
+
+      ;let change random-float -1.1   ;; why wrong?
+
+      rt random-float 360
+      fd speed
+    ]   ; hatch an offspring and move it forward 1 step
   ]
 end
 
@@ -102,8 +138,8 @@ to eat-cat  ; cat procedure
         ;; show [size] of nearest-neighbor
 
          ask nearest-neighbor [ die ]
-         set energy energy + cat-gain-from-food     ; get energy from eating
-         set size size + 1
+          set energy energy + cat-gain-from-food     ; get energy from eating
+         ;; set size size + 1
       ]
     ]
    ]
@@ -132,16 +168,24 @@ to find-nearest-neighbor ;; turtle procedure
 end
 
 
+;;; add 'flee' behaviour so that speed gives an advantage
+
+
+
+
+
+;; flocking: much more interesting that individuals just random movement.
+
 ;;; once an animal achieves certain levels, change its image: makes picture more interesting.
 @#$#@#$#@
 GRAPHICS-WINDOW
 355
-10
-873
-529
+12
+868
+526
 -1
 -1
-10.0
+9.902
 1
 14
 1
@@ -177,10 +221,10 @@ NIL
 HORIZONTAL
 
 SLIDER
-183
-195
-360
-228
+175
+125
+352
+158
 cat-gain-from-food
 cat-gain-from-food
 0.0
@@ -191,26 +235,11 @@ cat-gain-from-food
 NIL
 HORIZONTAL
 
-SLIDER
-183
-231
-348
-264
-cat-reproduce
-cat-reproduce
-0.0
-20.0
-5.0
-1.0
-1
-%
-HORIZONTAL
-
 BUTTON
-40
-140
-109
-173
+20
+10
+89
+43
 setup
 setup
 NIL
@@ -224,10 +253,10 @@ NIL
 1
 
 BUTTON
-115
-140
-190
-173
+95
+10
+170
+43
 go
 go
 T
@@ -270,10 +299,10 @@ count cats
 11
 
 SWITCH
-105
-270
-241
-303
+195
+10
+331
+43
 show-energy?
 show-energy?
 1
@@ -281,45 +310,90 @@ show-energy?
 -1000
 
 SLIDER
-65
-10
-237
-43
+15
+90
+187
+123
 vision
 vision
 0
 10
-0.7
+0.2
 0.1
 1
 NIL
 HORIZONTAL
 
 SLIDER
-180
-110
-352
-143
+185
+90
+357
+123
 initial-energy
 initial-energy
 1
 500
-500.0
+103.0
 1
 1
 NIL
 HORIZONTAL
 
 SLIDER
-20
-60
-192
-93
+15
+55
+187
+88
 number-of-breeds
 number-of-breeds
 2
 20
-10.0
+20.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+175
+195
+347
+228
+initial-speed
+initial-speed
+0
+1
+0.05
+0.01
+1
+NIL
+HORIZONTAL
+
+SLIDER
+10
+160
+182
+193
+variation
+variation
+0
+1
+1.0
+0.001
+1
+NIL
+HORIZONTAL
+
+SLIDER
+175
+230
+347
+263
+breed-interval
+breed-interval
+0
+100
+50.0
 1
 1
 NIL
