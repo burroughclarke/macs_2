@@ -1,16 +1,23 @@
-globals [ max-cat ]  ; don't let cat population grow too large
-; cat and cats are both breeds of turtle.
+globals [
+  random-variation
+]
 
 ;; name 'cat' is just chosen for its simplicity
 breed [ cats cat ]
 
+
+;; no need for a global 'breed 1 is at size Z' variable: this is not an agent-based approach. Think of each creature on map as a little group of them
 turtles-own
 [
   minibreed ;; do not want to define seperate breeds. so just store it as a number. could also allow for 'number of breeds' var.
   energy
   speed
-  flockmates
+  flockmates         ;; agentset of all nearby creatures
+  eatmates           ;; agentset of nearby smaller creatures of a different breed
+  predamates         ;; agentset of nearby larger creatures of a different breed
   nearest-neighbor
+  breed-rate
+  herbivore-carnivore ;; optimisation towards getting energy from grass or energy from creatures
 ]
 
 patches-own [ countdown ]
@@ -25,17 +32,26 @@ to setup
   create-cats breednum  ; create the cats, then initialize their variables
   [
 
-    set color one-of [ red blue yellow pink orange black white grey cyan brown lime turquoise sky violet magenta] ;; don't want green!
+    set color one-of [ red blue yellow pink orange black white grey cyan lime turquoise sky violet magenta] ;; don't want green!
+    ;set shape one-of ["default"]
     set shape one-of [ "bug" "butterfly" "cow" "bird" "fish" "person" "turtle" "sheep" "wolf" "ant" "cow skull" "dog" "ghost" "hawk" "rabbit" "shark" "spider" "wolf 2" "wolf 3" "wolf 4" "wolf 5" "wolf 6" "wolf 7" ]
 
     set minibreed breednum
-    set size 2
+    set size initial-size
     set speed initial-speed
     set energy initial-energy
     setxy random-xcor random-ycor
+    set breed-rate initial-breed-rate
+    set herbivore-carnivore 50
 
     set breednum breednum - 1
   ]
+
+   ask patches [
+      set pcolor green
+      set countdown grass-regrowth-time
+  ]
+
   display-labels
   reset-ticks
 end
@@ -43,15 +59,37 @@ end
 to go
 
   ask cats [
+
+    ;; only flees if nearest creature is bigger
+    find-flockmates
+    flee
+
     move
-    ; set energy energy - 0.1  ; cats lose energy as they move
+    ; example: if speed = 6, then lose 0.006 energy per move
+    eat-grass
+;    show "move cost due to speed:"
+;    show (speed / 100) * (move-efficiency / 100)
+;    show "move cost due to speed:"
+;    show (size / 100) * (move-efficiency / 100)
+
+;    show "energy cost: "
+;    show ( (((size / 100) - ((speed / 100))) / 100) * move-overhead )
+
+
+    set energy energy - ( (((size / 100) - ((speed  / 100))) / 100) * move-overhead ) ; cats lose energy as they move. larger creatures require more energy to move.
     eat-cat ; cats eat a cat on their patch
     death ; cats die if out of energy
-    if ticks mod breed-interval = 0 [
+
+    ;; breed-rate represents both breeding frequency and how much energy the parent requires.
+    ;; this is because both these variables comprise the 'breeding aggressiveness' attribute
+    if ticks mod ceiling breed-rate = 0 [ ;; mod requires whole numbers so breed rate 1.534 --> 2
         reproduce-cats ; cats reproduce at random rate governed by slider
     ]
 
-  ]
+
+  ] ; ask cats
+
+  ask patches [ grow-grass ]
 
   tick
   display-labels
@@ -63,54 +101,45 @@ to move  ; turtle procedure
   fd speed
 end
 
-;to eat-grass  ; cat procedure
-;  ; cat eat grass, turn the patch brown
-;  if pcolor = green [
-;    set pcolor brown
-;    set energy energy + cat-gain-from-food  ; cat gain energy by eating
-;  ]
-;end
-
-;; example: a creature of size 2 requires 16 energy to breed
+;; breed rate represents how aggressively a creature tries to breed vs conserving energy. R-selection vs K-selection
 to reproduce-cats  ;
-  if energy > size ^ 4 [
-    set energy (energy / 2)                ; divide energy between parent and offspring
+  if energy > breed-rate [
+
+;    show "parent previous energy:"
+;    show energy
+
+    set energy ((energy / 2) / 100) * (100 - breed-overhead)              ; divide energy between parent and offspring
+
+;    show "energy left in parent: "
+;    show energy
+
     hatch 1 [
 
-;      show "size of parent:"
-;      show size
-      ;; random-normal outputs a value from the standard distribution
-      ;; '0.1' is the standard deviation
 
-      let coinflip random 2
-      ;show coinflip
-
-      let change random-float variation
-
-      if coinflip = 0 [
-        ; set change 0 - variation
-        set size size - change
-
-        if speed > variation [
-           set speed speed + change
-        ]
-      ]
-      if coinflip = 1 [
-        ; set change variation
-        set size size + change
-
-        ; don't let it get to minus numbers
-        if speed > variation [
-           set speed speed - change
-        ]
+      ;; otherwise big+fast things tend to just dominate everything
+      calculate-random-variation
+      if size > abs random-variation [ ; don't let it get to minus numbers
+        set size size + random-variation
 
       ]
-;    show "size:"
-;    show size
-;    show "speed:"
-;    show speed
+      if speed > abs random-variation [ ; don't let it get to minus numbers
+        set speed speed - random-variation
+      ]
 
-      ;let change random-float -1.1   ;; why wrong?
+
+;      calculate-random-variation
+;
+;      show speed
+
+      calculate-random-variation
+      if breed-rate > abs random-variation * 10 [ ; don't let it get to minus numbers
+         set breed-rate (breed-rate + random-variation)
+      ]
+
+      calculate-random-variation
+      if herbivore-carnivore > abs (random-variation * 10) [ ; don't let it get to minus numbers
+         set herbivore-carnivore (herbivore-carnivore + random-variation * 10)
+      ]
 
       rt random-float 360
       fd speed
@@ -118,12 +147,22 @@ to reproduce-cats  ;
   ]
 end
 
+;; creates a random variation value that can be positive or negative.
+;; for example, when a creature reproduces, its offspring can be slightly faster or slightly slower.
+to calculate-random-variation
+  let change random-float variation
+  let coinflip random 2
+  ifelse coinflip = 0
+  [set random-variation 0 - change]
+  [set random-variation change]
+end
+
 to eat-cat  ; cat procedure
 
   ;; ask patches in-radius vision
   ;;    [ set pcolor red ]
 
-  set flockmates other turtles in-radius vision
+  set flockmates other turtles in-radius eat-vision
   set nearest-neighbor min-one-of flockmates [distance myself] ;;  'nearest-neighbor' is a BIRD not a NUMBER
 
   ;let prey one-of cats-here
@@ -135,15 +174,25 @@ to eat-cat  ; cat procedure
       ;; animals do not eat their own breed of animal: could this be an 'evolved' trait to produce?
       if [minibreed] of nearest-neighbor != [minibreed] of self [
 
-        ;; show [size] of nearest-neighbor
+;        show "size of meal:"
+;        show [size] of nearest-neighbor
+;        show "energy obtained:"
+;        show ( [size] of nearest-neighbor * (eat-efficiency / 100))
 
-         ask nearest-neighbor [ die ]
-          set energy energy + cat-gain-from-food     ; get energy from eating
-         ;; set size size + 1
+        ;show "eat overhead:"
+
+        let maximum-energy [size] of nearest-neighbor
+        let eat-mod  (maximum-energy / 100) * eat-overhead
+        let herb-mod (eat-mod / 100)        * herbivore-carnivore
+
+
+        set energy energy + herb-mod   ; get energy from eating
+        ask nearest-neighbor [ die ]
+
       ]
     ]
    ]
-                                ; kill it, and...
+
 
 end
 
@@ -160,7 +209,7 @@ to display-labels
 end
 
 to find-flockmates  ;; turtle procedure
-  set flockmates other turtles in-radius vision
+  set flockmates other turtles ;min-radius see-vision
 end
 
 to find-nearest-neighbor ;; turtle procedure
@@ -168,15 +217,108 @@ to find-nearest-neighbor ;; turtle procedure
 end
 
 
-;;; add 'flee' behaviour so that speed gives an advantage
+;;; add 'flee' and 'chase' behaviour so that speed gives an advantage
+
+; if nearest creature is smaller, chase it
+; Behaviour when a bird sees a predator
+; (when a predator is within the 'vision' patch range of a bird)
+to flee
+    find-nearest-neighbor
+    if nearest-neighbor != nobody  [
+      if [minibreed] of nearest-neighbor != [minibreed] of self [ ;; animals do not eat their own breed of animal: could this be an 'evolved' trait to produce?
+        if [size] of nearest-neighbor > [size] of self [
+
+          ;; (2) bird gets ANGLE of nearest predator
+          let x-component [sin (towards myself + 180)] of nearest-neighbor
+          let y-component [cos (towards myself + 180)] of nearest-neighbor
+          let angle-to-neighbor atan x-component y-component
+
+          ;; (3) bird TURNS AWAY from predator as far as it can (as defined by 'max-seperate-turn')
+          turn-towards (angle-to-neighbor + 180) 360
+
+      ]
+
+      ;; can't seem to balance it
+;       if [size] of nearest-neighbor < [size] of self [
+;            ;; (2) bird gets ANGLE of nearest predator
+;          let x-component [sin (towards myself + 180)] of nearest-neighbor
+;          let y-component [cos (towards myself + 180)] of nearest-neighbor
+;          let angle-to-neighbor atan x-component y-component
+;
+;          ;; (3) bird TURNS TOWARDS meal as far as it can (as defined by 'max-seperate-turn')
+;          turn-towards (angle-to-neighbor) 360
+;       ]
+    ] ;; breed != self
 
 
+  ]
 
+end
 
+to turn-towards [new-heading max-turn]  ;; turtle procedure
+  turn-at-most (subtract-headings new-heading heading) max-turn
+end
 
-;; flocking: much more interesting that individuals just random movement.
+;; turn right by "turn" degrees (or left if "turn" is negative),
+;; but never turn more than "max-turn" degrees
+to turn-at-most [turn max-turn]  ;; turtle procedure
+  ifelse abs turn > max-turn
+    [ ifelse turn > 0
+        [ rt max-turn ]
+        [ lt max-turn ] ]
+    [ rt turn ]
+end
 
-;;; once an animal achieves certain levels, change its image: makes picture more interesting.
+ to grow-grass  ; patch procedure
+  ; countdown on brown patches: if reach 0, grow some grass
+  if pcolor = brown [
+    ifelse countdown <= 0
+      [ set pcolor green
+        set countdown grass-regrowth-time ]
+      [ set countdown countdown - 1 ]
+  ]
+end
+
+to eat-grass  ; sheep procedure
+  ; sheep eat grass, turn the patch brown
+  if pcolor = green [
+    set pcolor brown
+
+    let maximum-energy 1
+    let eat-mod  (maximum-energy / 100) * eat-overhead
+    let herb-mod (eat-mod / 100)        * (100 - herbivore-carnivore) ;; high value means animal is carnivore. carnivores are less efficient at getting nutrients from grass
+
+;    show "energy before grass eaten:"
+;    show energy
+    set energy energy + herb-mod ; sheep gain energy by eating
+;    show "energy after grass eaten:"
+;    show energy
+  ]
+end
+
+;; speed' is a misnomer: it represents how 'aggressivly searching' the creature is for resources.
+
+;; setting up just a single breed on a map is very informative: the breed adapts to exactly what the optimum attributes are for that environment.
+;; for example, if the environement allows for easy movement, the breed gets faster.
+;; for example, without any predators, the 'herbivore' attribute should get selected to 100%
+
+;; when resources are scarce and predator are scarce, moving in a group is a bad stratgey
+;; when resources are abundant and predators are abundant, moving in a group is a good strategy
+
+;; maybe one attribute is not being selected for if another attribute is taking precedence? E.g. if speed is more important than herbivore processing efficiency
+
+;; grass is important for territoriy control as well: gives advantage for creatues to remain in one area
+;; and advantage for smaller creatures that can control a large area
+
+;;   #####   creature commandments:
+
+;; when a creature moves, it expends energy
+;; the faster a creature moves, the more energy it expends
+;; the larger a creature is, the more energy it expends when it moves
+
+;; breeding requires energy in proportion to a creatures size (a small creature requires less energy to breed than a laeger one)
+
+;; a creature that eats a big creature gains a lot of energy. a creature that eats a small creature gains less energy.
 @#$#@#$#@
 GRAPHICS-WINDOW
 355
@@ -206,31 +348,16 @@ ticks
 30.0
 
 SLIDER
-185
-60
-357
-93
-initial-number-cats
-initial-number-cats
+10
+550
+180
+583
+eat-overhead
+eat-overhead
 0
-250
-37.0
-1
-1
-NIL
-HORIZONTAL
-
-SLIDER
-175
-125
-352
-158
-cat-gain-from-food
-cat-gain-from-food
-0.0
 100.0
-5.0
-1.0
+47.74
+0.01
 1
 NIL
 HORIZONTAL
@@ -269,35 +396,6 @@ NIL
 NIL
 0
 
-PLOT
-10
-360
-350
-530
-populations
-time
-pop.
-0.0
-100.0
-0.0
-100.0
-true
-true
-"" ""
-PENS
-"wolves" 1.0 0 -16449023 true "" "plot count cats"
-
-MONITOR
-115
-308
-185
-353
-wolves
-count cats
-3
-1
-11
-
 SWITCH
 195
 10
@@ -314,27 +412,27 @@ SLIDER
 90
 187
 123
-vision
-vision
+eat-vision
+eat-vision
 0
 10
-0.2
+1.0
 0.1
 1
 NIL
 HORIZONTAL
 
 SLIDER
-185
-90
-357
-123
+10
+355
+182
+388
 initial-energy
 initial-energy
-1
-500
-103.0
-1
+0
+10
+10.0
+0.001
 1
 NIL
 HORIZONTAL
@@ -346,7 +444,7 @@ SLIDER
 88
 number-of-breeds
 number-of-breeds
-2
+1
 20
 20.0
 1
@@ -355,25 +453,25 @@ NIL
 HORIZONTAL
 
 SLIDER
-175
-195
-347
-228
+10
+285
+185
+318
 initial-speed
 initial-speed
 0
 1
-0.05
+0.2
 0.01
 1
 NIL
 HORIZONTAL
 
 SLIDER
-10
-160
-182
-193
+15
+125
+187
+158
 variation
 variation
 0
@@ -384,13 +482,160 @@ variation
 NIL
 HORIZONTAL
 
+MONITOR
+890
+25
+1122
+70
+NIL
+mean [size] of turtles
+17
+1
+11
+
+PLOT
+425
+535
+885
+915
+Creatures Per Breed
+NIL
+NIL
+0.0
+10.0
+0.0
+10.0
+true
+false
+"" ""
+PENS
+"breed2" 1.0 0 -16777216 true "" "plot count turtles with [ minibreed = 2 ]"
+"pen-1" 1.0 0 -7500403 true "" "plot count turtles with [ minibreed = 1 ]"
+"pen-2" 1.0 0 -2674135 true "" "plot count turtles with [ minibreed = 0 ]"
+"pen-3" 1.0 0 -955883 true "" "plot count turtles with [ minibreed = 3 ]"
+"pen-4" 1.0 0 -6459832 true "" "plot count turtles with [ minibreed = 4 ]"
+"pen-5" 1.0 0 -1184463 true "" "plot count turtles with [ minibreed = 5 ]"
+"pen-6" 1.0 0 -10899396 true "" "plot count turtles with [ minibreed = 6 ]"
+"pen-7" 1.0 0 -13840069 true "" "plot count turtles with [ minibreed = 7 ]"
+"pen-8" 1.0 0 -14835848 true "" "plot count turtles with [ minibreed = 8 ]"
+"pen-9" 1.0 0 -11221820 true "" "plot count turtles with [ minibreed = 9 ]"
+"pen-10" 1.0 0 -13791810 true "" "plot count turtles with [ minibreed = 10 ]"
+"pen-11" 1.0 0 -13345367 true "" "plot count turtles with [ minibreed = 11 ]"
+"pen-12" 1.0 0 -8630108 true "" "plot count turtles with [ minibreed = 12 ]"
+"pen-13" 1.0 0 -5825686 true "" "plot count turtles with [ minibreed = 13 ]"
+"pen-14" 1.0 0 -2064490 true "" "plot count turtles with [ minibreed = 14 ]"
+"pen-15" 1.0 0 -16777216 true "" "plot count turtles with [ minibreed = 15 ]"
+"pen-16" 1.0 0 -16777216 true "" "plot count turtles with [ minibreed = 16 ]"
+"pen-17" 1.0 0 -16777216 true "" "plot count turtles with [ minibreed = 17 ]"
+"pen-18" 1.0 0 -16777216 true "" "plot count turtles with [ minibreed = 18 ]"
+"pen-19" 1.0 0 -16777216 true "" "plot count turtles with [ minibreed = 19 ]"
+"pen-20" 1.0 0 -16777216 true "" "plot count turtles with [ minibreed = 20 ]"
+
 SLIDER
-175
-230
-347
-263
-breed-interval
-breed-interval
+10
+250
+182
+283
+initial-size
+initial-size
+0
+2
+2.0
+0.1
+1
+NIL
+HORIZONTAL
+
+PLOT
+890
+75
+1215
+225
+Size
+NIL
+NIL
+0.0
+0.1
+0.0
+0.1
+true
+false
+"" ""
+PENS
+"default" 1.0 0 -16777216 true "" "plot mean [size] of turtles with [ minibreed = 4 ]"
+"pen-1" 1.0 0 -7500403 true "" "plot mean [size] of turtles with [ minibreed = 1 ]"
+"pen-2" 1.0 0 -2674135 true "" "plot mean [size] of turtles with [ minibreed = 2 ]"
+"pen-3" 1.0 0 -955883 true "" "plot mean [size] of turtles with [ minibreed = 5 ]"
+"pen-4" 1.0 0 -6459832 true "" "plot mean [size] of turtles with [ minibreed = 6 ]"
+"pen-5" 1.0 0 -1184463 true "" "plot mean [size] of turtles with [ minibreed = 7 ]"
+"pen-6" 1.0 0 -10899396 true "" "plot mean [size] of turtles with [ minibreed = 8 ]"
+"pen-7" 1.0 0 -13840069 true "" "plot mean [size] of turtles with [ minibreed = 9 ]"
+"pen-8" 1.0 0 -14835848 true "" "plot mean [size] of turtles with [ minibreed = 10 ]"
+"pen-9" 1.0 0 -11221820 true "" "plot mean [size] of turtles with [ minibreed = 11 ]"
+"pen-10" 1.0 0 -13791810 true "" "plot mean [size] of turtles with [ minibreed = 12 ]"
+"pen-11" 1.0 0 -13345367 true "" "plot mean [size] of turtles with [ minibreed = 13 ]"
+"pen-12" 1.0 0 -8630108 true "" "plot mean [size] of turtles with [ minibreed = 14 ]"
+"pen-13" 1.0 0 -5825686 true "" "plot mean [size] of turtles with [ minibreed = 15 ]"
+"pen-14" 1.0 0 -2064490 true "" "plot mean [size] of turtles with [ minibreed = 16 ]"
+"pen-15" 1.0 0 -16777216 true "" "plot mean [size] of turtles with [ minibreed = 17 ]"
+"pen-16" 1.0 0 -16777216 true "" "plot mean [size] of turtles with [ minibreed = 18 ]"
+"pen-17" 1.0 0 -16777216 true "" "plot mean [size] of turtles with [ minibreed = 19 ]"
+"pen-18" 1.0 0 -16777216 true "" "plot mean [size] of turtles with [ minibreed = 20 ]"
+"pen-19" 1.0 0 -14439633 true "" "plot mean [size] of turtles with [ minibreed = 3 ]"
+"pen-20" 1.0 0 -13791810 true "" "plot mean [size] of turtles with [ minibreed = 0 ]"
+
+SLIDER
+10
+480
+182
+513
+breed-overhead
+breed-overhead
+0
+100
+5.73
+0.01
+1
+NIL
+HORIZONTAL
+
+SLIDER
+10
+320
+185
+353
+initial-breed-rate
+initial-breed-rate
+0
+100
+6.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+10
+515
+182
+548
+move-overhead
+move-overhead
+0
+100
+50.32
+0.01
+1
+NIL
+HORIZONTAL
+
+SLIDER
+10
+390
+185
+423
+initial-herbivore-carnivore
+initial-herbivore-carnivore
 0
 100
 50.0
@@ -398,6 +643,135 @@ breed-interval
 1
 NIL
 HORIZONTAL
+
+SLIDER
+195
+165
+350
+198
+grass-regrowth-time
+grass-regrowth-time
+0
+1000
+41.0
+1
+1
+NIL
+HORIZONTAL
+
+PLOT
+890
+225
+1215
+445
+Herbivore - Carnivore (Carnivore = higher)
+NIL
+NIL
+0.0
+10.0
+0.0
+100.0
+true
+false
+"" ""
+PENS
+"default" 1.0 0 -16777216 true "" "plot mean [herbivore-carnivore] of turtles with [ minibreed = 0 ]"
+"pen-1" 1.0 0 -7500403 true "" "plot mean [herbivore-carnivore] of turtles with [ minibreed = 1 ]"
+"pen-2" 1.0 0 -2674135 true "" "plot mean [herbivore-carnivore] of turtles with [ minibreed = 2 ]"
+"pen-3" 1.0 0 -955883 true "" "plot mean [herbivore-carnivore] of turtles with [ minibreed = 3 ]"
+"pen-4" 1.0 0 -6459832 true "" "plot mean [herbivore-carnivore] of turtles with [ minibreed = 4 ]"
+"pen-5" 1.0 0 -1184463 true "" "plot mean [herbivore-carnivore] of turtles with [ minibreed = 5 ]"
+"pen-6" 1.0 0 -10899396 true "" "plot mean [herbivore-carnivore] of turtles with [ minibreed = 6 ]"
+"pen-7" 1.0 0 -13840069 true "" "plot mean [herbivore-carnivore] of turtles with [ minibreed = 7 ]"
+"pen-8" 1.0 0 -14835848 true "" "plot mean [herbivore-carnivore] of turtles with [ minibreed = 8 ]"
+"pen-9" 1.0 0 -11221820 true "" "plot mean [herbivore-carnivore] of turtles with [ minibreed = 9 ]"
+"pen-10" 1.0 0 -13791810 true "" "plot mean [herbivore-carnivore] of turtles with [ minibreed = 10 ]"
+"pen-11" 1.0 0 -13345367 true "" "plot mean [herbivore-carnivore] of turtles with [ minibreed = 11 ]"
+"pen-12" 1.0 0 -8630108 true "" "plot mean [herbivore-carnivore] of turtles with [ minibreed = 12 ]"
+"pen-13" 1.0 0 -5825686 true "" "plot mean [herbivore-carnivore] of turtles with [ minibreed = 13 ]"
+"pen-14" 1.0 0 -2064490 true "" "plot mean [herbivore-carnivore] of turtles with [ minibreed = 14 ]"
+"pen-15" 1.0 0 -16777216 true "" "plot mean [herbivore-carnivore] of turtles with [ minibreed = 15 ]"
+"pen-16" 1.0 0 -16777216 true "" "plot mean [herbivore-carnivore] of turtles with [ minibreed = 16 ]"
+"pen-17" 1.0 0 -16777216 true "" "plot mean [herbivore-carnivore] of turtles with [ minibreed = 17 ]"
+"pen-18" 1.0 0 -16777216 true "" "plot mean [herbivore-carnivore] of turtles with [ minibreed = 18 ]"
+"pen-19" 1.0 0 -16777216 true "" "plot mean [herbivore-carnivore] of turtles with [ minibreed = 19 ]"
+"pen-20" 1.0 0 -16777216 true "" "plot mean [herbivore-carnivore] of turtles with [ minibreed = 20 ]"
+
+PLOT
+890
+445
+1215
+640
+Speed
+NIL
+NIL
+0.0
+10.0
+0.0
+0.01
+true
+false
+"" ""
+PENS
+"default" 1.0 0 -16777216 true "" "plot mean [speed] of turtles with [ minibreed = 0 ]"
+"pen-1" 1.0 0 -7500403 true "" "plot mean [speed] of turtles with [ minibreed = 1 ]"
+"pen-2" 1.0 0 -2674135 true "" "plot mean [speed] of turtles with [ minibreed = 2 ]"
+"pen-3" 1.0 0 -955883 true "" "plot mean [speed] of turtles with [ minibreed = 3 ]"
+"pen-4" 1.0 0 -6459832 true "" "plot mean [speed] of turtles with [ minibreed = 4 ]"
+"pen-5" 1.0 0 -1184463 true "" "plot mean [speed] of turtles with [ minibreed = 5 ]"
+"pen-6" 1.0 0 -10899396 true "" "plot mean [speed] of turtles with [ minibreed = 6 ]"
+"pen-7" 1.0 0 -13840069 true "" "plot mean [speed] of turtles with [ minibreed = 7 ]"
+"pen-8" 1.0 0 -14835848 true "" "plot mean [speed] of turtles with [ minibreed = 8 ]"
+"pen-9" 1.0 0 -11221820 true "" "plot mean [speed] of turtles with [ minibreed = 9 ]"
+"pen-10" 1.0 0 -13791810 true "" "plot mean [speed] of turtles with [ minibreed = 10 ]"
+"pen-11" 1.0 0 -13345367 true "" "plot mean [speed] of turtles with [ minibreed = 11 ]"
+"pen-12" 1.0 0 -8630108 true "" "plot mean [speed] of turtles with [ minibreed = 12 ]"
+"pen-13" 1.0 0 -5825686 true "" "plot mean [speed] of turtles with [ minibreed = 13 ]"
+"pen-14" 1.0 0 -2064490 true "" "plot mean [speed] of turtles with [ minibreed = 14 ]"
+"pen-15" 1.0 0 -16777216 true "" "plot mean [speed] of turtles with [ minibreed = 15 ]"
+"pen-16" 1.0 0 -16777216 true "" "plot mean [speed] of turtles with [ minibreed = 16 ]"
+"pen-17" 1.0 0 -16777216 true "" "plot mean [speed] of turtles with [ minibreed = 17 ]"
+"pen-18" 1.0 0 -16777216 true "" "plot mean [speed] of turtles with [ minibreed = 18 ]"
+"pen-19" 1.0 0 -16777216 true "" "plot mean [speed] of turtles with [ minibreed = 19 ]"
+"pen-20" 1.0 0 -16777216 true "" "plot mean [speed] of turtles with [ minibreed = 20 ]"
+
+PLOT
+890
+645
+1090
+795
+Breed Rate
+NIL
+NIL
+0.0
+10.0
+0.0
+10.0
+true
+false
+"" ""
+PENS
+"default" 1.0 0 -16777216 true "" "plot mean [breed-rate] of turtles with [ minibreed = 0 ]"
+"pen-1" 1.0 0 -7500403 true "" "plot mean [breed-rate] of turtles with [ minibreed = 1 ]"
+"pen-2" 1.0 0 -2674135 true "" "plot mean [breed-rate] of turtles with [ minibreed = 2 ]"
+"pen-3" 1.0 0 -955883 true "" "plot mean [breed-rate] of turtles with [ minibreed = 3 ]"
+"pen-4" 1.0 0 -6459832 true "" "plot mean [breed-rate] of turtles with [ minibreed = 4 ]"
+"pen-5" 1.0 0 -1184463 true "" "plot mean [breed-rate] of turtles with [ minibreed = 5 ]"
+"pen-6" 1.0 0 -10899396 true "" "plot mean [breed-rate] of turtles with [ minibreed = 6 ]"
+"pen-7" 1.0 0 -13840069 true "" "plot mean [breed-rate] of turtles with [ minibreed = 7 ]"
+"pen-8" 1.0 0 -14835848 true "" "plot mean [breed-rate] of turtles with [ minibreed = 8 ]"
+"pen-9" 1.0 0 -11221820 true "" "plot mean [breed-rate] of turtles with [ minibreed = 9 ]"
+"pen-10" 1.0 0 -13791810 true "" "plot mean [breed-rate] of turtles with [ minibreed = 10 ]"
+"pen-11" 1.0 0 -13345367 true "" "plot mean [breed-rate] of turtles with [ minibreed = 11 "
+"pen-12" 1.0 0 -8630108 true "" "plot mean [breed-rate] of turtles with [ minibreed = 12 ]"
+"pen-13" 1.0 0 -5825686 true "" "plot mean [breed-rate] of turtles with [ minibreed = 13 ]"
+"pen-14" 1.0 0 -2064490 true "" "plot mean [breed-rate] of turtles with [ minibreed = 14 ]"
+"pen-15" 1.0 0 -16777216 true "" "plot mean [breed-rate] of turtles with [ minibreed = 15 ]"
+"pen-16" 1.0 0 -16777216 true "" "plot mean [breed-rate] of turtles with [ minibreed = 16 ]"
+"pen-17" 1.0 0 -16777216 true "" "plot mean [breed-rate] of turtles with [ minibreed = 17 ]"
+"pen-18" 1.0 0 -16777216 true "" "plot mean [breed-rate] of turtles with [ minibreed = 18 ]"
+"pen-19" 1.0 0 -16777216 true "" "plot mean [breed-rate] of turtles with [ minibreed = 19 ]"
+"pen-20" 1.0 0 -16777216 true "" "plot mean [breed-rate] of turtles with [ minibreed = 20 ]"
 
 @#$#@#$#@
 ## WHAT IS IT?
