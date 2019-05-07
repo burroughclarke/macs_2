@@ -1,5 +1,8 @@
 globals [
   random-variation
+  starve-deaths
+  murder-deaths
+  total-deaths
 ]
 
 ;; name 'cat' is just chosen for its simplicity
@@ -27,7 +30,11 @@ to setup
 
   ask patches [ set pcolor green ]
 
-  let breednum number-of-breeds
+  let breednum initial-number-of-breeds
+
+  set starve-deaths 0
+  set murder-deaths 0
+  set total-deaths  0
 
   create-cats breednum  ; create the cats, then initialize their variables
   [
@@ -42,7 +49,7 @@ to setup
     set energy initial-energy
     setxy random-xcor random-ycor
     set breed-rate initial-breed-rate
-    set herbivore-carnivore 50
+    set herbivore-carnivore initial-herbivore-carnivore
 
     set breednum breednum - 1
   ]
@@ -58,11 +65,11 @@ end
 
 to go
 
-  ask cats [
+  if count turtles > 1000 [
+    stop
+  ]
 
-    ;; only flees if nearest creature is bigger
-    find-flockmates
-    flee
+  ask cats [
 
     move
     ; example: if speed = 6, then lose 0.006 energy per move
@@ -74,7 +81,6 @@ to go
 
 ;    show "energy cost: "
 ;    show ( (((size / 100) - ((speed / 100))) / 100) * move-overhead )
-
 
     set energy energy - ( (((size / 100) - ((speed  / 100))) / 100) * move-overhead ) ; cats lose energy as they move. larger creatures require more energy to move.
     eat-cat ; cats eat a cat on their patch
@@ -120,7 +126,10 @@ to reproduce-cats  ;
       calculate-random-variation
       if size > abs random-variation [ ; don't let it get to minus numbers
         set size size + random-variation
-
+        ;; model grinds to a halt if thousands of tiny creatures are formed (smaller than visible on screen)
+        if size < 0.5 [
+          set size 0.5
+        ]
       ]
       if speed > abs random-variation [ ; don't let it get to minus numbers
         set speed speed - random-variation
@@ -150,7 +159,7 @@ end
 ;; creates a random variation value that can be positive or negative.
 ;; for example, when a creature reproduces, its offspring can be slightly faster or slightly slower.
 to calculate-random-variation
-  let change random-float variation
+  let change random-float generational-variation
   let coinflip random 2
   ifelse coinflip = 0
   [set random-variation 0 - change]
@@ -162,7 +171,7 @@ to eat-cat  ; cat procedure
   ;; ask patches in-radius vision
   ;;    [ set pcolor red ]
 
-  set flockmates other turtles in-radius eat-vision
+  set flockmates other turtles in-radius 1 ;; animals can only eat other animals on the same patch as them
   set nearest-neighbor min-one-of flockmates [distance myself] ;;  'nearest-neighbor' is a BIRD not a NUMBER
 
   ;let prey one-of cats-here
@@ -188,6 +197,7 @@ to eat-cat  ; cat procedure
 
         set energy energy + herb-mod   ; get energy from eating
         ask nearest-neighbor [ die ]
+        set murder-deaths murder-deaths + 1
 
       ]
     ]
@@ -198,7 +208,10 @@ end
 
 to death  ; turtle procedure (i.e. both cat nd cat procedure)
   ; when energy dips below zero, die
-  if energy < 0 [ die ]
+  if energy < 0 [
+    set starve-deaths starve-deaths + 1
+    die
+  ]
 end
 
 to display-labels
@@ -206,57 +219,6 @@ to display-labels
   if show-energy? [
     ask cats [ set label round energy ]
   ]
-end
-
-to find-flockmates  ;; turtle procedure
-  set flockmates other turtles ;min-radius see-vision
-end
-
-to find-nearest-neighbor ;; turtle procedure
-  set nearest-neighbor min-one-of flockmates [distance myself]
-end
-
-
-;;; add 'flee' and 'chase' behaviour so that speed gives an advantage
-
-; if nearest creature is smaller, chase it
-; Behaviour when a bird sees a predator
-; (when a predator is within the 'vision' patch range of a bird)
-to flee
-    find-nearest-neighbor
-    if nearest-neighbor != nobody  [
-      if [minibreed] of nearest-neighbor != [minibreed] of self [ ;; animals do not eat their own breed of animal: could this be an 'evolved' trait to produce?
-        if [size] of nearest-neighbor > [size] of self [
-
-          ;; (2) bird gets ANGLE of nearest predator
-          let x-component [sin (towards myself + 180)] of nearest-neighbor
-          let y-component [cos (towards myself + 180)] of nearest-neighbor
-          let angle-to-neighbor atan x-component y-component
-
-          ;; (3) bird TURNS AWAY from predator as far as it can (as defined by 'max-seperate-turn')
-          turn-towards (angle-to-neighbor + 180) 360
-
-      ]
-
-      ;; can't seem to balance it
-;       if [size] of nearest-neighbor < [size] of self [
-;            ;; (2) bird gets ANGLE of nearest predator
-;          let x-component [sin (towards myself + 180)] of nearest-neighbor
-;          let y-component [cos (towards myself + 180)] of nearest-neighbor
-;          let angle-to-neighbor atan x-component y-component
-;
-;          ;; (3) bird TURNS TOWARDS meal as far as it can (as defined by 'max-seperate-turn')
-;          turn-towards (angle-to-neighbor) 360
-;       ]
-    ] ;; breed != self
-
-
-  ]
-
-end
-
-to turn-towards [new-heading max-turn]  ;; turtle procedure
-  turn-at-most (subtract-headings new-heading heading) max-turn
 end
 
 ;; turn right by "turn" degrees (or left if "turn" is negative),
@@ -296,7 +258,14 @@ to eat-grass  ; sheep procedure
   ]
 end
 
+
+
+
+
+;; effect of creature size on energy expenditure:
+
 ;; speed' is a misnomer: it represents how 'aggressivly searching' the creature is for resources.
+;; increase speed increases the 'mixing' factor: creatures come into contact with each other more
 
 ;; setting up just a single breed on a map is very informative: the breed adapts to exactly what the optimum attributes are for that environment.
 ;; for example, if the environement allows for easy movement, the breed gets faster.
@@ -321,10 +290,10 @@ end
 ;; a creature that eats a big creature gains a lot of energy. a creature that eats a small creature gains less energy.
 @#$#@#$#@
 GRAPHICS-WINDOW
-355
-12
-868
-526
+190
+10
+703
+524
 -1
 -1
 9.902
@@ -348,15 +317,15 @@ ticks
 30.0
 
 SLIDER
-10
-550
-180
-583
+5
+405
+185
+438
 eat-overhead
 eat-overhead
 0
 100.0
-47.74
+72.9
 0.01
 1
 NIL
@@ -380,9 +349,9 @@ NIL
 1
 
 BUTTON
-95
+90
 10
-170
+165
 43
 go
 go
@@ -397,10 +366,10 @@ NIL
 0
 
 SWITCH
-195
-10
-331
-43
+20
+45
+165
+78
 show-energy?
 show-energy?
 1
@@ -408,72 +377,57 @@ show-energy?
 -1000
 
 SLIDER
-15
-90
-187
-123
-eat-vision
-eat-vision
-0
-10
-1.0
-0.1
-1
-NIL
-HORIZONTAL
-
-SLIDER
-10
-355
-182
-388
+5
+205
+185
+238
 initial-energy
 initial-energy
 0
 10
-10.0
+0.573
 0.001
 1
 NIL
 HORIZONTAL
 
 SLIDER
-15
-55
-187
-88
-number-of-breeds
-number-of-breeds
+5
+275
+185
+308
+initial-number-of-breeds
+initial-number-of-breeds
 1
 20
-20.0
+2.0
 1
 1
 NIL
 HORIZONTAL
 
 SLIDER
-10
-285
+5
+135
 185
-318
+168
 initial-speed
 initial-speed
 0
 1
-0.2
+0.86
 0.01
 1
 NIL
 HORIZONTAL
 
 SLIDER
-15
-125
-187
-158
-variation
-variation
+5
+505
+185
+538
+generational-variation
+generational-variation
 0
 1
 1.0
@@ -482,22 +436,11 @@ variation
 NIL
 HORIZONTAL
 
-MONITOR
-890
-25
-1122
-70
-NIL
-mean [size] of turtles
-17
-1
-11
-
 PLOT
-425
-535
-885
-915
+245
+530
+705
+760
 Creatures Per Breed
 NIL
 NIL
@@ -509,9 +452,9 @@ true
 false
 "" ""
 PENS
-"breed2" 1.0 0 -16777216 true "" "plot count turtles with [ minibreed = 2 ]"
+"breed2" 1.0 0 -16777216 true "" "plot count turtles with [ minibreed = 0 ]"
 "pen-1" 1.0 0 -7500403 true "" "plot count turtles with [ minibreed = 1 ]"
-"pen-2" 1.0 0 -2674135 true "" "plot count turtles with [ minibreed = 0 ]"
+"pen-2" 1.0 0 -2674135 true "" "plot count turtles with [ minibreed = 2 ]"
 "pen-3" 1.0 0 -955883 true "" "plot count turtles with [ minibreed = 3 ]"
 "pen-4" 1.0 0 -6459832 true "" "plot count turtles with [ minibreed = 4 ]"
 "pen-5" 1.0 0 -1184463 true "" "plot count turtles with [ minibreed = 5 ]"
@@ -532,10 +475,10 @@ PENS
 "pen-20" 1.0 0 -16777216 true "" "plot count turtles with [ minibreed = 20 ]"
 
 SLIDER
-10
-250
-182
-283
+5
+100
+185
+133
 initial-size
 initial-size
 0
@@ -547,10 +490,10 @@ NIL
 HORIZONTAL
 
 PLOT
-890
-75
-1215
-225
+715
+13
+1180
+188
 Size
 NIL
 NIL
@@ -585,25 +528,25 @@ PENS
 "pen-20" 1.0 0 -13791810 true "" "plot mean [size] of turtles with [ minibreed = 0 ]"
 
 SLIDER
-10
-480
-182
-513
+5
+335
+185
+368
 breed-overhead
 breed-overhead
 0
 100
-5.73
+26.11
 0.01
 1
 NIL
 HORIZONTAL
 
 SLIDER
-10
-320
+5
+170
 185
-353
+203
 initial-breed-rate
 initial-breed-rate
 0
@@ -615,25 +558,25 @@ NIL
 HORIZONTAL
 
 SLIDER
-10
-515
-182
-548
+5
+370
+185
+403
 move-overhead
 move-overhead
 0
 100
-50.32
+84.08
 0.01
 1
 NIL
 HORIZONTAL
 
 SLIDER
-10
-390
+5
+240
 185
-423
+273
 initial-herbivore-carnivore
 initial-herbivore-carnivore
 0
@@ -645,25 +588,25 @@ NIL
 HORIZONTAL
 
 SLIDER
-195
-165
-350
-198
+5
+470
+185
+503
 grass-regrowth-time
 grass-regrowth-time
 0
 1000
-41.0
+885.0
 1
 1
 NIL
 HORIZONTAL
 
 PLOT
-890
-225
-1215
-445
+715
+188
+1180
+388
 Herbivore - Carnivore (Carnivore = higher)
 NIL
 NIL
@@ -698,10 +641,10 @@ PENS
 "pen-20" 1.0 0 -16777216 true "" "plot mean [herbivore-carnivore] of turtles with [ minibreed = 20 ]"
 
 PLOT
-890
-445
-1215
-640
+715
+388
+1180
+583
 Speed
 NIL
 NIL
@@ -736,10 +679,10 @@ PENS
 "pen-20" 1.0 0 -16777216 true "" "plot mean [speed] of turtles with [ minibreed = 20 ]"
 
 PLOT
-890
-645
-1090
-795
+715
+583
+1180
+758
 Breed Rate
 NIL
 NIL
@@ -772,6 +715,55 @@ PENS
 "pen-18" 1.0 0 -16777216 true "" "plot mean [breed-rate] of turtles with [ minibreed = 18 ]"
 "pen-19" 1.0 0 -16777216 true "" "plot mean [breed-rate] of turtles with [ minibreed = 19 ]"
 "pen-20" 1.0 0 -16777216 true "" "plot mean [breed-rate] of turtles with [ minibreed = 20 ]"
+
+PLOT
+30
+595
+235
+760
+Starve vs Murder
+NIL
+NIL
+0.0
+10.0
+0.0
+10.0
+true
+true
+"" ""
+PENS
+"Starve" 1.0 0 -16777216 true "" "plot starve-deaths"
+"Murder" 1.0 0 -955883 true "" "plot murder-deaths"
+
+TEXTBOX
+50
+85
+200
+103
+Initial Conditions
+11
+0.0
+1
+
+TEXTBOX
+40
+320
+190
+338
+Biology Conditions
+11
+0.0
+1
+
+TEXTBOX
+25
+450
+175
+468
+Environment Conditions\n
+11
+0.0
+1
 
 @#$#@#$#@
 ## WHAT IS IT?
@@ -1339,6 +1331,82 @@ setup
 repeat 75 [ go ]
 @#$#@#$#@
 @#$#@#$#@
+<experiments>
+  <experiment name="1A" repetitions="1" runMetricsEveryStep="true">
+    <setup>setup</setup>
+    <go>go</go>
+    <timeLimit steps="1000"/>
+    <metric>mean [size] of turtles with [ minibreed = 1 ]</metric>
+    <metric>mean [size] of turtles with [ minibreed = 2 ]</metric>
+    <enumeratedValueSet variable="initial-herbivore-carnivore">
+      <value value="50"/>
+      <value value="60"/>
+      <value value="70"/>
+    </enumeratedValueSet>
+  </experiment>
+  <experiment name="1B" repetitions="1" runMetricsEveryStep="true">
+    <setup>setup</setup>
+    <go>go</go>
+    <timeLimit steps="1500"/>
+    <metric>mean [herbivore-carnivore] of turtles with [ minibreed = 1 ]</metric>
+    <metric>mean [herbivore-carnivore] of turtles with [ minibreed = 2 ]</metric>
+    <metric>mean [size] of turtles with [ minibreed = 1 ]</metric>
+    <metric>mean [size] of turtles with [ minibreed = 2 ]</metric>
+    <metric>mean [speed] of turtles with [ minibreed = 1 ]</metric>
+    <metric>mean [speed] of turtles with [ minibreed = 2 ]</metric>
+    <metric>mean [breed-rate] of turtles with [ minibreed = 1 ]</metric>
+    <metric>mean [breed-rate] of turtles with [ minibreed = 2 ]</metric>
+    <enumeratedValueSet variable="initial-herbivore-carnivore">
+      <value value="0"/>
+      <value value="10"/>
+      <value value="20"/>
+      <value value="30"/>
+      <value value="40"/>
+      <value value="50"/>
+      <value value="60"/>
+      <value value="70"/>
+      <value value="80"/>
+      <value value="90"/>
+      <value value="100"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="initial-speed">
+      <value value="0.86"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="initial-energy">
+      <value value="0.573"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="show-energy?">
+      <value value="false"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="variation">
+      <value value="1"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="eat-vision">
+      <value value="1"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="initial-size">
+      <value value="2"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="eat-overhead">
+      <value value="72.9"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="number-of-breeds">
+      <value value="2"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="initial-breed-rate">
+      <value value="6"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="breed-overhead">
+      <value value="26.11"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="move-overhead">
+      <value value="84.08"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="grass-regrowth-time">
+      <value value="885"/>
+    </enumeratedValueSet>
+  </experiment>
+</experiments>
 @#$#@#$#@
 @#$#@#$#@
 default
