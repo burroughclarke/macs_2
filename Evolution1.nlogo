@@ -1,49 +1,67 @@
+
+;; These variables store statistics on what happens in the environment:
 globals [
   random-variation
-  starve-deaths
-  murder-deaths
-  total-deaths
+  starve-deaths    ;; how many organisms are killed by starvation?
+  murder-deaths    ;; how many organisms are killed by other organisms?
 ]
 
-;; name 'cat' is just chosen for its simplicity
-breed [ cats cat ]
+;; turtles do not have breed-scope attributes: this is not an agent-based approach.
+;; (in other words, there is no variable that represents what every creature in a breed does)
+;; Evolution has no species-level scope, it is only concerned with each individual organism
+;; organisms varies *individually* (or as pairs in sexual reproduction)
+;; Each species displays variation caused by the average variation of individuals.
 
+;; A single id value, 'minibreed', is stored in order, for example, for creatures of the same
+;; breed to know not eat each other. It conferes no 'differentiating' effect on a breed-scope level.
+;; Attributes that actually do affect behaviour, such as speed, size, etc, are all the same at initialisation.
 
-;; no need for a global 'breed 1 is at size Z' variable: this is not an agent-based approach. Think of each creature on map as a little group of them
+;; attributes of 'organisms'
 turtles-own
 [
-  minibreed ;; do not want to define seperate breeds. so just store it as a number. could also allow for 'number of breeds' var.
-  energy
-  speed
-  flockmates         ;; agentset of all nearby creatures
-  eatmates           ;; agentset of nearby smaller creatures of a different breed
-  predamates         ;; agentset of nearby larger creatures of a different breed
-  nearest-neighbor
-  breed-rate
+  minibreed           ;; this identifying number is the only seperating characteristic of each breed
+  energy              ;; energy stored in organism. needed for breeding, moving, etc. If it reaches zero, it dies
+  speed               ;; distance an organism can move each time interval
+  flockmates          ;; agentset of all nearby creatures, used to select other creatures to eat
+  nearest-neighbor    ;; details about the closest
+  breed-rate          ;;
   herbivore-carnivore ;; optimisation towards getting energy from grass or energy from creatures
 ]
 
-patches-own [ countdown ]
+;; attributes of 'grass' patches
+patches-own [
+  countdown
+]
 
 to setup
   clear-all
 
+  ;; grass patches are fully grown at startup
+
   ask patches [ set pcolor green ]
+
+  ;; 'breednum' is a variable that is used in a loop to initialise each breed
+  ;; to a different consecutive value (e.g. 3, 2, 1, 0)
 
   let breednum initial-number-of-breeds
 
-  set starve-deaths 0
-  set murder-deaths 0
-  set total-deaths  0
+  ;; there is always just one initial organism abstraction for each breed.
 
-  create-cats breednum  ; create the cats, then initialize their variables
+  create-turtles breednum  ; create the turtles, then initialize their variables
   [
-
+    ;; assign a random shape and colour value to each breed, so each breed can be easily viewed on the map
     set color one-of [ red blue yellow pink orange black white grey cyan lime turquoise sky violet magenta] ;; don't want green!
-    ;set shape one-of ["default"]
     set shape one-of [ "bug" "butterfly" "cow" "bird" "fish" "person" "turtle" "sheep" "wolf" "ant" "cow skull" "dog" "ghost" "hawk" "rabbit" "shark" "spider" "wolf 2" "wolf 3" "wolf 4" "wolf 5" "wolf 6" "wolf 7" ]
 
     set minibreed breednum
+
+    ;; set the initial variables, as defined by the user the GUI.
+    ;; If the wrong initial values are set, the creatures cannot
+    ;; 'evolve' fast enough to handle the environment and will go
+    ;; extinct. For example, in an environment with few organisms,
+    ;; a herbivorious species may go extinct if it can't 'select'
+    ;; carnivorous traits fast enought to adapt to the conditions.
+
     set size initial-size
     set speed initial-speed
     set energy initial-energy
@@ -51,9 +69,11 @@ to setup
     set breed-rate initial-breed-rate
     set herbivore-carnivore initial-herbivore-carnivore
 
+    ;; the 'create-turtles' method operates as a loop that executes 'breednum' times.
     set breednum breednum - 1
   ]
 
+  ;; all grass patches start fully grown.
    ask patches [
       set pcolor green
       set countdown grass-regrowth-time
@@ -69,133 +89,147 @@ to go
     stop
   ]
 
-  ask cats [
+  ;; each time interval, these are the behaviours that organisms exhibit:
+  ask turtles [
+    move                  ; 1. organisms move around the environment
+    eat-grass             ; 2. organisms eat plant life
+    eat-turtle            ; 3. organisms eat other organisms
+    reproduce-turtles ;   ; 4. organisms reproduce
+    death                 ; 5. organisms die
+  ]
 
-    move
-    ; example: if speed = 6, then lose 0.006 energy per move
-    eat-grass
-;    show "move cost due to speed:"
-;    show (speed / 100) * (move-efficiency / 100)
-;    show "move cost due to speed:"
-;    show (size / 100) * (move-efficiency / 100)
-
-;    show "energy cost: "
-;    show ( (((size / 100) - ((speed / 100))) / 100) * move-overhead )
-
-    set energy energy - ( (((size / 100) - ((speed  / 100))) / 100) * move-overhead ) ; cats lose energy as they move. larger creatures require more energy to move.
-    eat-cat ; cats eat a cat on their patch
-    death ; cats die if out of energy
-
-    ;; breed-rate represents both breeding frequency and how much energy the parent requires.
-    ;; this is because both these variables comprise the 'breeding aggressiveness' attribute
-    if ticks mod ceiling breed-rate = 0 [ ;; mod requires whole numbers so breed rate 1.534 --> 2
-        reproduce-cats ; cats reproduce at random rate governed by slider
-    ]
-
-
-  ] ; ask cats
-
-  ask patches [ grow-grass ]
+  ;; each time interval, these are the behaviours that grass patches exhibit:
+  ask patches [
+    grow-grass           ; 1. plants grow
+  ]
 
   tick
   display-labels
 end
 
-to move  ; turtle procedure
+;; organisms move in a random direction, at the organism's speed.
+;; this costs the organism energy.
+;; large organisms expend more energy moving than smaller organisms.
+;; faster organisms expend more energy moving that slower organisms.
+;; the environment itself imposes an 'overhead' on the movement.
+;; for example, a human moving over difficult terrain expends more energy
+;; to move the same distance compared to moving over easy terrain.
+
+to move
   rt random 50
   lt random 50
   fd speed
+
+  ; turtles lose energy as they move. larger and faster creatures require more energy to move.
+  set energy energy - ( (((size / 100) - ((speed  / 100))) / 100) * move-overhead )
 end
 
 ;; breed rate represents how aggressively a creature tries to breed vs conserving energy. R-selection vs K-selection
-to reproduce-cats  ;
+to reproduce-turtles  ;
+
+  ;; breed-rate is governed by the organisms 'breed aggressiveness' attribute.
+  ;; aggressively breeding organisms will breed even if they themselves have little energy.
+  ;; cautiously breeding organisms will wait until they have a lot of energy before breeding.
+
   if energy > breed-rate [
 
-;    show "parent previous energy:"
-;    show energy
-
-    set energy ((energy / 2) / 100) * (100 - breed-overhead)              ; divide energy between parent and offspring
-
-;    show "energy left in parent: "
-;    show energy
+    ; divide energy between parent and offspring
+    set energy ((energy / 2) / 100) * (100 - breed-overhead)
 
     hatch 1 [
 
-
-      ;; otherwise big+fast things tend to just dominate everything
+      ;; vary the offspring's size
       calculate-random-variation
       if size > abs random-variation [ ; don't let it get to minus numbers
         set size size + random-variation
-        ;; model grinds to a halt if thousands of tiny creatures are formed (smaller than visible on screen)
-        if size < 0.5 [
-          set size 0.5
-        ]
-      ]
-      if speed > abs random-variation [ ; don't let it get to minus numbers
-        set speed speed - random-variation
       ]
 
+       ;; Prevents creatures from evolving smaller than size 0.5
+       ;; The model grinds to a halt if thousands of tiny creatures are formed (smaller than visible on screen)
+       ;; Of course, it is quite realistic for an ecosystem to also include millions of microscopic creatures,
+       ;; so the effect of this will have to remain unknown without a very powerful system capable of handling
+       ;; that many agents to run these tests.
 
-;      calculate-random-variation
-;
-;      show speed
+      if size < 0.5 [
+         set size 0.5
+       ]
+
+      ;; vary the offspring's speed
+
+      if speed > abs random-variation [ ; don't let speed get set to a minus number: the creature becomes fast!
+        set speed speed - random-variation ;; otherwise big+fast things tend to just dominate everything
+      ]
+
+      ;; vary the offspring's breed rate
+      ;; The variation value is multiplied by 10, as this trait has been modelled as rought out of 100.
+      ;; Traits such as size and speed are roughly out of 10, so they are not multiplied.
 
       calculate-random-variation
-      if breed-rate > abs random-variation * 10 [ ; don't let it get to minus numbers
+      if breed-rate > abs random-variation * 10 [ ; don't let breed rate get set to a minus number
          set breed-rate (breed-rate + random-variation)
       ]
+
+      ;; vary the offspring's herbivore-carnivore optimisation
+      ;; The variation value is multiplied by 10, as this trait has been modelled as rought out of 100.
+      ;; Traits such as size and speed are roughly out of 10, so they are not multiplied.
 
       calculate-random-variation
       if herbivore-carnivore > abs (random-variation * 10) [ ; don't let it get to minus numbers
          set herbivore-carnivore (herbivore-carnivore + random-variation * 10)
       ]
 
-      rt random-float 360
-      fd speed
-    ]   ; hatch an offspring and move it forward 1 step
+    ]
   ]
 end
 
-;; creates a random variation value that can be positive or negative.
+;; creates a random 'generational variation' value
 ;; for example, when a creature reproduces, its offspring can be slightly faster or slightly slower.
 to calculate-random-variation
+
+  ;; (1) generate the random value
   let change random-float generational-variation
+
+  ;; (2) set the value to be positive or negative
   let coinflip random 2
   ifelse coinflip = 0
   [set random-variation 0 - change]
   [set random-variation change]
 end
 
-to eat-cat  ; cat procedure
+to eat-turtle
 
-  ;; ask patches in-radius vision
-  ;;    [ set pcolor red ]
+  ;; animals can only eat other animals on the same environment patch as them
 
-  set flockmates other turtles in-radius 1 ;; animals can only eat other animals on the same patch as them
-  set nearest-neighbor min-one-of flockmates [distance myself] ;;  'nearest-neighbor' is a BIRD not a NUMBER
+  set flockmates other turtles in-radius 1
+  set nearest-neighbor min-one-of flockmates [distance myself]
 
-  ;let prey one-of cats-here
-  ; grab a random cat
+  if nearest-neighbor != nobody  [
 
-  if nearest-neighbor != nobody  [                          ; did we get one?  if so,
+    ;; organisms can only eat organisms that are smaller than themselves.
+    ;; this is an abstraction of how effectively organisms can attack and defends themselves
+    ;; while there are exceptions, this general rule holds throughout all ecosystems.
+
     if [size] of nearest-neighbor <= [size] of self [
 
-      ;; animals do not eat their own breed of animal: could this be an 'evolved' trait to produce?
+      ;; animals do not eat animals of their own breed.
+      ;; ideally, this trait should be 'evolved' and not defined from the beginning,
+      ;; but this would greatly add to the complexity of the model.
+
       if [minibreed] of nearest-neighbor != [minibreed] of self [
 
-;        show "size of meal:"
-;        show [size] of nearest-neighbor
-;        show "energy obtained:"
-;        show ( [size] of nearest-neighbor * (eat-efficiency / 100))
-
-        ;show "eat overhead:"
+        ;; receive the energy from eating the organism.
+        ;; this is affected by two modifiers:
+        ;; (a) carnivores receive more energy than herbivores from eating other organisms
+        ;; (b) user defines a variable representing the inefficency value in how energy
+        ;;     is absorbed by organisms: the act of eating and metabolising the energy
+        ;;     never gives the animal the full energy value that existed in the meal.
 
         let maximum-energy [size] of nearest-neighbor
         let eat-mod  (maximum-energy / 100) * eat-overhead
         let herb-mod (eat-mod / 100)        * herbivore-carnivore
+        set energy energy + herb-mod
 
-
-        set energy energy + herb-mod   ; get energy from eating
+        ;; if the nearby creature gets eaten, it dies!
         ask nearest-neighbor [ die ]
         set murder-deaths murder-deaths + 1
 
@@ -203,36 +237,30 @@ to eat-cat  ; cat procedure
     ]
    ]
 
-
 end
 
-to death  ; turtle procedure (i.e. both cat nd cat procedure)
-  ; when energy dips below zero, die
+;; if animal runs out of energy, it has starved to death
+
+to death
   if energy < 0 [
     set starve-deaths starve-deaths + 1
     die
   ]
 end
 
+;; display each creatures energy score using the switch 'show-energy?'
+
 to display-labels
   ask turtles [ set label "" ]
   if show-energy? [
-    ask cats [ set label round energy ]
+    ask turtles [ set label round energy ]
   ]
 end
 
-;; turn right by "turn" degrees (or left if "turn" is negative),
-;; but never turn more than "max-turn" degrees
-to turn-at-most [turn max-turn]  ;; turtle procedure
-  ifelse abs turn > max-turn
-    [ ifelse turn > 0
-        [ rt max-turn ]
-        [ lt max-turn ] ]
-    [ rt turn ]
-end
+;; when grass is eaten, it starts a countdown until it regrows
+;; this time is set by the user as 'grass-regrowth-time'
 
- to grow-grass  ; patch procedure
-  ; countdown on brown patches: if reach 0, grow some grass
+ to grow-grass
   if pcolor = brown [
     ifelse countdown <= 0
       [ set pcolor green
@@ -241,53 +269,25 @@ end
   ]
 end
 
-to eat-grass  ; sheep procedure
-  ; sheep eat grass, turn the patch brown
+;; how an organism interacts with the grass in the environment.
+;; more herbivorious animals are more efficient at gaining energy
+;; from grass than carnivorous animals
+
+to eat-grass  ; turtle procedure
+  ; turtles eat grass, turn the patch brown
   if pcolor = green [
     set pcolor brown
 
+    ;; high 'herbivore-carnivore'; value means animal is carnivore.
+    ;; carnivores are less efficient at getting nutrients from grass
+
     let maximum-energy 1
     let eat-mod  (maximum-energy / 100) * eat-overhead
-    let herb-mod (eat-mod / 100)        * (100 - herbivore-carnivore) ;; high value means animal is carnivore. carnivores are less efficient at getting nutrients from grass
-
-;    show "energy before grass eaten:"
-;    show energy
-    set energy energy + herb-mod ; sheep gain energy by eating
-;    show "energy after grass eaten:"
-;    show energy
+    let herb-mod (eat-mod / 100)        * (100 - herbivore-carnivore)
+    set energy energy + herb-mod
   ]
 end
 
-
-
-
-
-;; effect of creature size on energy expenditure:
-
-;; speed' is a misnomer: it represents how 'aggressivly searching' the creature is for resources.
-;; increase speed increases the 'mixing' factor: creatures come into contact with each other more
-
-;; setting up just a single breed on a map is very informative: the breed adapts to exactly what the optimum attributes are for that environment.
-;; for example, if the environement allows for easy movement, the breed gets faster.
-;; for example, without any predators, the 'herbivore' attribute should get selected to 100%
-
-;; when resources are scarce and predator are scarce, moving in a group is a bad stratgey
-;; when resources are abundant and predators are abundant, moving in a group is a good strategy
-
-;; maybe one attribute is not being selected for if another attribute is taking precedence? E.g. if speed is more important than herbivore processing efficiency
-
-;; grass is important for territoriy control as well: gives advantage for creatues to remain in one area
-;; and advantage for smaller creatures that can control a large area
-
-;;   #####   creature commandments:
-
-;; when a creature moves, it expends energy
-;; the faster a creature moves, the more energy it expends
-;; the larger a creature is, the more energy it expends when it moves
-
-;; breeding requires energy in proportion to a creatures size (a small creature requires less energy to breed than a laeger one)
-
-;; a creature that eats a big creature gains a lot of energy. a creature that eats a small creature gains less energy.
 @#$#@#$#@
 GRAPHICS-WINDOW
 190
