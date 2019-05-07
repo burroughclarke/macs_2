@@ -1,15 +1,15 @@
 
 ;; These variables store statistics on what happens in the environment:
 globals [
-  random-variation
   starve-deaths    ;; how many organisms are killed by starvation?
   murder-deaths    ;; how many organisms are killed by other organisms?
+  random-variation ;; how much variation will the next organisms to be born exhibit, for a particular trait?
 ]
 
 ;; turtles do not have breed-scope attributes: this is not an agent-based approach.
 ;; (in other words, there is no variable that represents what every creature in a breed does)
 ;; Evolution has no species-level scope, it is only concerned with each individual organism
-;; organisms varies *individually* (or as pairs in sexual reproduction)
+;; organisms varies *individually* (or the result of a pair of attributes in sexual reproduction)
 ;; Each species displays variation caused by the average variation of individuals.
 
 ;; A single id value, 'minibreed', is stored in order, for example, for creatures of the same
@@ -33,6 +33,10 @@ patches-own [
   countdown
 ]
 
+;; when 'setup' button is pressed: initialise the model to it's starting conditions
+;; the goal is for these conditions to be as simple, and have as little possible effect,
+;; on the results of the model.
+
 to setup
   clear-all
 
@@ -50,6 +54,7 @@ to setup
   create-turtles breednum  ; create the turtles, then initialize their variables
   [
     ;; assign a random shape and colour value to each breed, so each breed can be easily viewed on the map
+
     set color one-of [ red blue yellow pink orange black white grey cyan lime turquoise sky violet magenta] ;; don't want green!
     set shape one-of [ "bug" "butterfly" "cow" "bird" "fish" "person" "turtle" "sheep" "wolf" "ant" "cow skull" "dog" "ghost" "hawk" "rabbit" "shark" "spider" "wolf 2" "wolf 3" "wolf 4" "wolf 5" "wolf 6" "wolf 7" ]
 
@@ -70,26 +75,37 @@ to setup
     set herbivore-carnivore initial-herbivore-carnivore
 
     ;; the 'create-turtles' method operates as a loop that executes 'breednum' times.
+
     set breednum breednum - 1
   ]
 
   ;; all grass patches start fully grown.
+
    ask patches [
       set pcolor green
       set countdown grass-regrowth-time
   ]
 
-  display-labels
+  ;; Display each organisms energy values, if user has selected that option
+
+  display-energy-labels
+
+  ;; Reset time to 0
+
   reset-ticks
 end
 
 to go
 
+  ;; Running this model on a standard 8GM Ram computer can handle up to ~1000 organisms
+  ;; in the environment at once. A more powerful computer should be able to extend this.
+
   if count turtles > 1000 [
     stop
   ]
 
-  ;; each time interval, these are the behaviours that organisms exhibit:
+  ;; Each time interval, these are the behaviours that organisms exhibit:
+
   ask turtles [
     move                  ; 1. organisms move around the environment
     eat-grass             ; 2. organisms eat plant life
@@ -98,17 +114,17 @@ to go
     death                 ; 5. organisms die
   ]
 
-  ;; each time interval, these are the behaviours that grass patches exhibit:
+  ;; Each time interval, these are the behaviours that grass patches exhibit:
+
   ask patches [
     grow-grass           ; 1. plants grow
   ]
 
   tick
-  display-labels
+  display-energy-labels
 end
 
-;; organisms move in a random direction, at the organism's speed.
-;; this costs the organism energy.
+;; organisms move in a random direction, at the organism's speed. This costs the organism energy.
 ;; large organisms expend more energy moving than smaller organisms.
 ;; faster organisms expend more energy moving that slower organisms.
 ;; the environment itself imposes an 'overhead' on the movement.
@@ -120,11 +136,22 @@ to move
   lt random 50
   fd speed
 
-  ; turtles lose energy as they move. larger and faster creatures require more energy to move.
-  set energy energy - ( (((size / 100) - ((speed  / 100))) / 100) * move-overhead )
+  ; turtles lose energy as they move.
+  ;; this is affected by three modifiers:
+  ;;   (a) larger creatures require more energy to move.
+  ;;   (b) faster creatures require more energy to move.
+  ;;   (c) each creatures biology, and their envirnment, imposes a 'move-overhead' on movement:
+  ;;       no creature can ever more entirely efficiently.
+  ;;       In other words, no creature can perfectly convert the energy it expends from trying to move into actual movement.
+  ;;       For example, a cyclist can covert their energy into movement more efficiently than a pedestrian.
+  ;;       The environment matters as well;
+  ;;       A cyclist on a road can convert their energy into movement much more efficiently than a cyclist in a swamp.
+
+  set energy energy - ( (((size / 10) - ((speed  / 100))) / 100) * move-overhead )
 end
 
 ;; breed rate represents how aggressively a creature tries to breed vs conserving energy. R-selection vs K-selection
+
 to reproduce-turtles  ;
 
   ;; breed-rate is governed by the organisms 'breed aggressiveness' attribute.
@@ -133,67 +160,76 @@ to reproduce-turtles  ;
 
   if energy > breed-rate [
 
-    ; divide energy between parent and offspring
+    ;; divide energy between parent and offspring
+    ;; the breeding process is never perfectly efficient:
+    ;; the user-defined variable 'breed-overhead' defines how much energy
+    ;; is lost in this 'transfer' of energy from parent to offspring.
+
     set energy ((energy / 2) / 100) * (100 - breed-overhead)
+
+    ;; A single organism abstract is 'hatched' each breeding time.
+    ;; Of course, some creatures have far more children per breeding instance than just one.
+
+    ;; This is abstracted using the 'breed-rate' attribute. For example,
+    ;; an aggressively breeding organism may spawn a new creature every
+    ;; time interval for twenty time intervals in total. A cautiously
+    ;; breeding organism may have a child every hundred time intervals.
 
     hatch 1 [
 
-      ;; vary the offspring's size
-      calculate-random-variation
-      if size > abs random-variation [ ; don't let it get to minus numbers
-        set size size + random-variation
+      ;; Vary the offspring's size based on how the user has defined the maximum generational variation
+      ;; generational variation is calculated along the normal distribution.
+      ;; The standard deivation from the mean is represented by a user-defined variable.
+
+      set size calculate-generational-variation size
+
+      ;; Prevent creatures from evolving smaller than size 0.3
+      ;; The model grinds to a halt if thousands of tiny creatures are formed (smaller than visible on screen)
+      ;; Of course, it is quite realistic for an ecosystem to also include millions of microscopic creatures,
+      ;; so the effect of this will have to remain unknown without a very powerful system capable of handling
+      ;; that many agents to run these tests.
+
+      if size < 0.3 [
+        set size 0.3
       ]
 
-       ;; Prevents creatures from evolving smaller than size 0.5
-       ;; The model grinds to a halt if thousands of tiny creatures are formed (smaller than visible on screen)
-       ;; Of course, it is quite realistic for an ecosystem to also include millions of microscopic creatures,
-       ;; so the effect of this will have to remain unknown without a very powerful system capable of handling
-       ;; that many agents to run these tests.
+      ;; there is no mechanism that allows the smaller creatures to avoid predators.
+      ;; For example, birds can avoid being eaten by lions by flying, mice can avoid by hiding, and ants
+      ;; can avoid by just being so small the lion cannot physically eat them.
+      ;; Because the model does not represent these 'avoidance' strategies, and all the animals coexist in a very small
+      ;; area, large, fast animals naturally dominate this setting, and a monopoly will eventually develop.
 
-      if size < 0.5 [
-         set size 0.5
-       ]
+      set speed calculate-generational-variation speed
 
-      ;; vary the offspring's speed
-
-      if speed > abs random-variation [ ; don't let speed get set to a minus number: the creature becomes fast!
-        set speed speed - random-variation ;; otherwise big+fast things tend to just dominate everything
-      ]
-
-      ;; vary the offspring's breed rate
+      ;; Vary the offspring's breed rate based on how the user has defined the maximum generational variation
       ;; The variation value is multiplied by 10, as this trait has been modelled as rought out of 100.
       ;; Traits such as size and speed are roughly out of 10, so they are not multiplied.
 
-      calculate-random-variation
-      if breed-rate > abs random-variation * 10 [ ; don't let breed rate get set to a minus number
-         set breed-rate (breed-rate + random-variation)
-      ]
+      set breed-rate calculate-generational-variation breed-rate
 
-      ;; vary the offspring's herbivore-carnivore optimisation
+      ;; Vary the offspring's herbivore-carnivore optimisation based on how the user has defined the maximum generational variation
       ;; The variation value is multiplied by 10, as this trait has been modelled as rought out of 100.
       ;; Traits such as size and speed are roughly out of 10, so they are not multiplied.
 
-      calculate-random-variation
-      if herbivore-carnivore > abs (random-variation * 10) [ ; don't let it get to minus numbers
-         set herbivore-carnivore (herbivore-carnivore + random-variation * 10)
-      ]
-
+      set herbivore-carnivore calculate-generational-variation herbivore-carnivore
     ]
   ]
 end
 
 ;; creates a random 'generational variation' value
 ;; for example, when a creature reproduces, its offspring can be slightly faster or slightly slower.
-to calculate-random-variation
+;; this is somewhat random, following a standard deviation curve.
+;; For example, generations of humans vary in height. Most are within a certain range,
+;; but there are occasional outliers with much more variation.
 
-  ;; (1) generate the random value
-  let change random-float generational-variation
+;; It was also an option for the level of variation to be an evolved trait:
+;; for example the way that organisms adopt sexual vs asexual reproduction in order for there to be greater
+;; variation in the child organisms (see Netlogo 'Parasites' model for example of how this benefits
+;; factors such as disease resistance). However, this was decided to be too complex.
 
-  ;; (2) set the value to be positive or negative
-  let coinflip random 2
-  ifelse coinflip = 0
-  [set random-variation 0 - change]
-  [set random-variation change]
+to-report calculate-generational-variation [prev-value]
+  set prev-value (random-normal prev-value generational-variation)
+  report prev-value
 end
 
 to eat-turtle
@@ -205,35 +241,48 @@ to eat-turtle
 
   if nearest-neighbor != nobody  [
 
+    ;; the more 'carniverous' an animal is, the more likely it will try to eat other organisms.
+    ;; for example:
+    ;; a completely herbivorous animal will never attempt to eat another animal.
+    ;; a completely carnivorous animal will eat any organism it encounters.
+
+    if random-float 1 < herbivore-carnivore [
+
     ;; organisms can only eat organisms that are smaller than themselves.
     ;; this is an abstraction of how effectively organisms can attack and defends themselves
     ;; while there are exceptions, this general rule holds throughout all ecosystems.
 
-    if [size] of nearest-neighbor <= [size] of self [
+      if [size] of nearest-neighbor < [size] of self [
 
-      ;; animals do not eat animals of their own breed.
-      ;; ideally, this trait should be 'evolved' and not defined from the beginning,
-      ;; but this would greatly add to the complexity of the model.
+        ;; animals do not eat animals of their own breed.
+        ;; ideally, this trait should be 'evolved' and not defined from the beginning,
+        ;; but this would greatly add to the complexity of the model.
 
-      if [minibreed] of nearest-neighbor != [minibreed] of self [
+        if [minibreed] of nearest-neighbor != [minibreed] of self [
 
-        ;; receive the energy from eating the organism.
-        ;; this is affected by two modifiers:
-        ;; (a) carnivores receive more energy than herbivores from eating other organisms
-        ;; (b) user defines a variable representing the inefficency value in how energy
-        ;;     is absorbed by organisms: the act of eating and metabolising the energy
-        ;;     never gives the animal the full energy value that existed in the meal.
+          ;; receive the energy from eating the organism.
+          ;; this is affected by two modifiers:
+          ;; (a) carnivores receive more energy than herbivores from eating other organisms
+          ;; (b) user defines a variable representing the inefficency value in how energy
+          ;;     is absorbed by organisms: the act of eating and metabolising the energy
+          ;;     never gives the animal the full energy value that existed in the meal.
 
-        let maximum-energy [size] of nearest-neighbor
-        let eat-mod  (maximum-energy / 100) * eat-overhead
-        let herb-mod (eat-mod / 100)        * herbivore-carnivore
-        set energy energy + herb-mod
+          let maximum-energy [size] of nearest-neighbor
+          let eat-mod  (maximum-energy / 100) * eat-overhead
+          let herb-mod (eat-mod / 10)        * herbivore-carnivore
+          set energy energy + herb-mod
 
-        ;; if the nearby creature gets eaten, it dies!
-        ask nearest-neighbor [ die ]
-        set murder-deaths murder-deaths + 1
+          ;; if the nearby creature gets eaten, it dies!
 
+          ask nearest-neighbor [ die ]
+
+          ;; Record the death as being caused by another creature, not starvation
+
+          set murder-deaths murder-deaths + 1
+
+        ]
       ]
+
     ]
    ]
 
@@ -243,14 +292,21 @@ end
 
 to death
   if energy < 0 [
+
+    ;; Record the death as being due to starvation, not another creature
+
     set starve-deaths starve-deaths + 1
+
+    ;; kill the organism and remove from map.
+    ;; The model does not consider 'scavenging' carniverous behaviour.
+
     die
   ]
 end
 
 ;; display each creatures energy score using the switch 'show-energy?'
 
-to display-labels
+to display-energy-labels
   ask turtles [ set label "" ]
   if show-energy? [
     ask turtles [ set label round energy ]
@@ -261,6 +317,10 @@ end
 ;; this time is set by the user as 'grass-regrowth-time'
 
  to grow-grass
+
+  ;; 'eaten' grass is represented by a brown patch
+  ;; 'ripe'  grass is represented by a green patch
+
   if pcolor = brown [
     ifelse countdown <= 0
       [ set pcolor green
@@ -274,16 +334,23 @@ end
 ;; from grass than carnivorous animals
 
 to eat-grass  ; turtle procedure
-  ; turtles eat grass, turn the patch brown
+
+  ;; 'eaten' grass is represented by a brown patch
+  ;; 'ripe'  grass is represented by a green patch
+
   if pcolor = green [
     set pcolor brown
 
-    ;; high 'herbivore-carnivore'; value means animal is carnivore.
-    ;; carnivores are less efficient at getting nutrients from grass
+    ;; receive the energy from the eaten grass.
+    ;; this is affected by two modifiers:
+    ;; (a) herbivores receive more energy from grass than carnivores
+    ;; (b) user defines a variable representing the inefficency value in how energy
+    ;;     is absorbed by organisms: the act of eating and metabolising the energy
+    ;;     never gives the animal the full energy value that existed in the meal.
 
     let maximum-energy 1
     let eat-mod  (maximum-energy / 100) * eat-overhead
-    let herb-mod (eat-mod / 100)        * (100 - herbivore-carnivore)
+    let herb-mod (eat-mod / 10)        * (10 - herbivore-carnivore)
     set energy energy + herb-mod
   ]
 end
@@ -325,7 +392,7 @@ eat-overhead
 eat-overhead
 0
 100.0
-72.9
+24.85
 0.01
 1
 NIL
@@ -385,7 +452,7 @@ initial-energy
 initial-energy
 0
 10
-0.573
+7.818
 0.001
 1
 NIL
@@ -415,7 +482,7 @@ initial-speed
 initial-speed
 0
 1
-0.86
+0.5
 0.01
 1
 NIL
@@ -483,7 +550,7 @@ initial-size
 initial-size
 0
 2
-2.0
+1.0
 0.1
 1
 NIL
@@ -536,7 +603,7 @@ breed-overhead
 breed-overhead
 0
 100
-26.11
+13.94
 0.01
 1
 NIL
@@ -551,7 +618,7 @@ initial-breed-rate
 initial-breed-rate
 0
 100
-6.0
+8.0
 1
 1
 NIL
@@ -566,7 +633,7 @@ move-overhead
 move-overhead
 0
 100
-84.08
+29.09
 0.01
 1
 NIL
@@ -580,8 +647,8 @@ SLIDER
 initial-herbivore-carnivore
 initial-herbivore-carnivore
 0
-100
-50.0
+10
+5.0
 1
 1
 NIL
@@ -596,7 +663,7 @@ grass-regrowth-time
 grass-regrowth-time
 0
 1000
-885.0
+509.0
 1
 1
 NIL
@@ -613,7 +680,7 @@ NIL
 0.0
 10.0
 0.0
-100.0
+10.0
 true
 false
 "" ""
